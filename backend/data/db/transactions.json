@@ -1,0 +1,29 @@
+[
+  {
+    "id": "mqt71mdzgc83r",
+    "userId": "mqt71mduf5puk",
+    "userEmail": "repairjhoscart@gmail.com",
+    "type": "add",
+    "amount": 5,
+    "description": "Bono de bienvenida por registro",
+    "date": "2026-06-25T07:41:42.935Z"
+  },
+  {
+    "id": "mqt6gf6tbm8q8",
+    "userId": "mqt69glismp4h",
+    "userEmail": "docente_demo@test.com",
+    "type": "add",
+    "amount": 15,
+    "description": "Carga de prueba",
+    "date": "2026-06-25T07:25:13.830Z"
+  },
+  {
+    "id": "mqt69glq63o0h",
+    "userId": "mqt69glismp4h",
+    "userEmail": "docente_demo@test.com",
+    "type": "add",
+    "amount": 5,
+    "description": "Bono de bienvenida por registro",
+    "date": "2026-06-25T07:19:49.070Z"
+  }
+]

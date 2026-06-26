@@ -1,0 +1,31 @@
+[
+  {
+    "id": "admin_root",
+    "email": "admin@avelino.ia",
+    "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+    "name": "Administrador Avelino",
+    "role": "admin",
+    "credits": 9999,
+    "createdAt": "2026-06-25T07:13:41.651Z"
+  },
+  {
+    "id": "mqt69glismp4h",
+    "email": "docente_demo@test.com",
+    "password": "9228105f4ea40ae4b70fde55ee2caf4495c1f188333c41ef566417ab04819f56",
+    "name": "Prof. Ramiro Choque",
+    "nivel": "Educación Primaria Comunitaria Vocacional",
+    "role": "docente",
+    "credits": 20,
+    "createdAt": "2026-06-25T07:19:49.063Z"
+  },
+  {
+    "id": "mqt71mduf5puk",
+    "email": "repairjhoscart@gmail.com",
+    "password": "2685f54468475e4545fe6e0f418cd5a1999a686f6763f5ca890b120a6a321986",
+    "name": "Prof. Moises Salazar",
+    "nivel": "Educación Primaria Comunitaria Vocacional",
+    "role": "docente",
+    "credits": 5,
+    "createdAt": "2026-06-25T07:41:42.931Z"
+  }
+]

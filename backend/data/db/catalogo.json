@@ -1,0 +1,201 @@
+{
+  "niveles": [
+    {
+      "id": "eifc",
+      "nombre": "Educación Inicial en Familia Comunitaria",
+      "sigla": "EIFC",
+      "grados": [
+        1,
+        2
+      ],
+      "usa_campos": true,
+      "usa_areas": false,
+      "archivo_fuente": "planes-programas-inicial-2023.md"
+    },
+    {
+      "id": "epcv",
+      "nombre": "Educación Primaria Comunitaria Vocacional",
+      "sigla": "EPCV",
+      "grados": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "usa_campos": true,
+      "usa_areas": true,
+      "archivo_fuente": "planes-programas-primaria-2023.md"
+    },
+    {
+      "id": "escp",
+      "nombre": "Educación Secundaria Comunitaria Productiva",
+      "sigla": "ESCP",
+      "grados": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "usa_campos": true,
+      "usa_areas": true,
+      "archivo_fuente": "planes-programas-secundaria-2023.md"
+    }
+  ],
+  "trimestres": [
+    1,
+    2,
+    3
+  ],
+  "campos": [
+    {
+      "id": "ccp",
+      "nombre": "Cosmos y Pensamiento",
+      "siglas": [
+        "CCP",
+        "CSCCP"
+      ]
+    },
+    {
+      "id": "ccs",
+      "nombre": "Comunidad y Sociedad",
+      "siglas": [
+        "CCS",
+        "CSCCS"
+      ]
+    },
+    {
+      "id": "cvtt",
+      "nombre": "Vida Tierra Territorio",
+      "siglas": [
+        "CVTT",
+        "CSCVTT"
+      ]
+    },
+    {
+      "id": "cctp",
+      "nombre": "Ciencia, Tecnología y Producción",
+      "siglas": [
+        "CCTP",
+        "CSCCTP"
+      ]
+    }
+  ],
+  "areas_primaria": [
+    {
+      "id": "comunicacion",
+      "nombre": "Comunicación y Lenguajes",
+      "campo": "ccs"
+    },
+    {
+      "id": "matematica",
+      "nombre": "Matemática",
+      "campo": "cctp"
+    },
+    {
+      "id": "ciencias_sociales",
+      "nombre": "Ciencias Sociales",
+      "campo": "ccs"
+    },
+    {
+      "id": "ed_fisica",
+      "nombre": "Educación Física y Deportes",
+      "campo": "ccs"
+    },
+    {
+      "id": "ed_musical",
+      "nombre": "Educación Musical",
+      "campo": "ccs"
+    },
+    {
+      "id": "artes_plasticas",
+      "nombre": "Artes Plásticas y Visuales",
+      "campo": "ccs"
+    },
+    {
+      "id": "ciencias_naturales",
+      "nombre": "Ciencias Naturales",
+      "campo": "cvtt"
+    },
+    {
+      "id": "valores",
+      "nombre": "Valores, Espiritualidades y Religiones",
+      "campo": "ccp"
+    },
+    {
+      "id": "tecnica_tecnologica",
+      "nombre": "Técnica Tecnológica",
+      "campo": "cctp"
+    }
+  ],
+  "areas_secundaria": [
+    {
+      "id": "biologia",
+      "nombre": "Ciencias Naturales: Biología – Geografía",
+      "campo": "cvtt"
+    },
+    {
+      "id": "fisica",
+      "nombre": "Ciencias Naturales: Física",
+      "campo": "cvtt"
+    },
+    {
+      "id": "quimica",
+      "nombre": "Ciencias Naturales: Química",
+      "campo": "cvtt"
+    },
+    {
+      "id": "comunicacion",
+      "nombre": "Comunicación y Lenguajes: Lengua Castellana",
+      "campo": "ccs"
+    },
+    {
+      "id": "lengua_extranjera",
+      "nombre": "Lengua Extranjera",
+      "campo": "ccs"
+    },
+    {
+      "id": "ciencias_sociales",
+      "nombre": "Ciencias Sociales",
+      "campo": "ccs"
+    },
+    {
+      "id": "matematica",
+      "nombre": "Matemática",
+      "campo": "cctp"
+    },
+    {
+      "id": "ed_fisica",
+      "nombre": "Educación Física y Deportes",
+      "campo": "ccs"
+    },
+    {
+      "id": "ed_musical",
+      "nombre": "Educación Musical",
+      "campo": "ccs"
+    },
+    {
+      "id": "artes_plasticas",
+      "nombre": "Artes Plásticas y Visuales",
+      "campo": "ccs"
+    },
+    {
+      "id": "filosofia",
+      "nombre": "Cosmovisiones Filosofía y Sicología",
+      "campo": "ccp"
+    },
+    {
+      "id": "valores",
+      "nombre": "Valores Espiritualidad y Religiones",
+      "campo": "ccp"
+    },
+    {
+      "id": "tecnica_tecnologica",
+      "nombre": "Técnica Tecnológica General",
+      "campo": "cctp"
+    }
+  ]
+}
