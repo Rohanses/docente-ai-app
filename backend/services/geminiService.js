@@ -37,7 +37,7 @@ async function generatePDC(params, customApiKey) {
     const model = getModel(customApiKey);
     
     // Obtener contexto curriculares base pasando trimestre
-    const curriculumContext = storageService.getContextForAI(nivel, grado, area, trimestre);
+    const curriculumContext = await storageService.getContextForAI(nivel, grado, area, trimestre, params.userId);
 
     const prompt = `
 Eres un asesor pedagógico experto en el Sistema Educativo Plurinacional (SEP) de Bolivia, con un profundo conocimiento del Modelo Educativo Sociocomunitario Productivo (MESCP) (Ley 070) y experto en las mejores metodologías y estrategias pedagógicas innovadoras a nivel mundial (como Aprendizaje Basado en Proyectos, Design Thinking, Aula Invertida, Gamificación, Rutinas de Pensamiento y enfoques neuroeducativos).
@@ -194,7 +194,7 @@ async function generateEvaluation(params, customApiKey) {
     } = params;
 
     const model = getModel(customApiKey);
-    const curriculumContext = storageService.getContextForAI(nivel, grado, area, params.trimestre || 1);
+    const curriculumContext = await storageService.getContextForAI(nivel, grado, area, params.trimestre || 1, params.userId);
 
     const prompt = `
 Eres un docente experto en evaluación diagnóstica, formativa y sumativa en Bolivia, bajo el enfoque del MESCP y las tendencias globales de evaluación por competencias y pensamiento crítico.
@@ -272,7 +272,7 @@ async function generateSelfEvaluation(params, customApiKey) {
     } = params;
 
     const model = getModel(customApiKey);
-    const curriculumContext = storageService.getContextForAI(nivel, grado, area, params.trimestre || 1);
+    const curriculumContext = await storageService.getContextForAI(nivel, grado, area, params.trimestre || 1, params.userId);
 
     const prompt = `
 Eres un docente y psicólogo educativo boliviano, experto en evaluación cualitativa y el proceso de autoevaluación reflexiva de las y los estudiantes bajo el MESCP. En el modelo boliviano, la autoevaluación es un proceso metacognitivo de reflexión honesta del estudiante sobre su desarrollo en dos dimensiones fundamentales:
