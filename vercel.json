@@ -19,11 +19,20 @@
       "dest": "backend/server.js"
     },
     {
-      "handle": "filesystem"
+      "src": "/assets/(.*)",
+      "dest": "frontend/dist/assets/$1"
+    },
+    {
+      "src": "/favicon.svg",
+      "dest": "frontend/dist/favicon.svg"
+    },
+    {
+      "src": "/icons.svg",
+      "dest": "frontend/dist/icons.svg"
     },
     {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "frontend/dist/index.html"
     }
   ]
 }
