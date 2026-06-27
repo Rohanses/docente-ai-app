@@ -11,28 +11,15 @@ const geminiService = require('./services/geminiService');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Inicializar almacenamiento, bases de datos y archivos oficiales
+// Inicializar almacenamiento y RAG
 storageService.initialize();
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Configurar multer para subida de archivos (solo archivos .txt y .md)
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dest = path.join(__dirname, 'data/user_documents');
-        if (!fs.existsSync(dest)) {
-            fs.mkdirSync(dest, { recursive: true });
-        }
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-        cb(null, `${name}${ext}`);
-    }
-});
+// Configurar multer con almacenamiento en memoria para entornos serverless (Vercel)
+const storage = multer.memoryStorage();
 
 const upload = multer({
     storage: storage,
@@ -47,44 +34,48 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// Middleware de validación de Administrador
-function requireAdmin(req, res, next) {
+// Middleware de validación de Administrador (asíncrono)
+async function requireAdmin(req, res, next) {
     const userId = req.headers['x-user-id'];
     if (!userId) {
         return res.status(401).json({ error: 'No autorizado. Falta cabecera x-user-id.' });
     }
     
-    const user = storageService.getUserById(userId);
-    if (!user || user.role !== 'admin') {
-        return res.status(403).json({ error: 'Acceso denegado. Se requieren privilegios de administrador.' });
+    try {
+        const user = await storageService.getUserById(userId);
+        if (!user || user.role !== 'admin') {
+            return res.status(403).json({ error: 'Acceso denegado. Se requieren privilegios de administrador.' });
+        }
+        next();
+    } catch (e) {
+        res.status(500).json({ error: 'Error interno en la validación de administrador: ' + e.message });
     }
-    next();
 }
 
 // === RUTAS DEL API ===
 
 // --- Autenticación ---
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
     const { email, password, name, nivel } = req.body;
     if (!email || !password || !name) {
         return res.status(400).json({ error: 'Faltan campos obligatorios (email, password, nombre).' });
     }
     try {
-        const user = storageService.registerUser(email, password, name, nivel);
+        const user = await storageService.registerUser(email, password, name, nivel);
         res.status(201).json(user);
     } catch (e) {
         res.status(400).json({ error: e.message });
     }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
         return res.status(400).json({ error: 'Faltan campos obligatorios (email, password).' });
     }
     try {
-        const user = storageService.authenticateUser(email, password);
+        const user = await storageService.authenticateUser(email, password);
         res.json(user);
     } catch (e) {
         res.status(401).json({ error: e.message });
@@ -93,7 +84,7 @@ app.post('/api/auth/login', (req, res) => {
 
 // --- Créditos del Usuario ---
 
-app.post('/api/users/consume-credit', (req, res) => {
+app.post('/api/users/consume-credit', async (req, res) => {
     const userId = req.headers['x-user-id'];
     const { amount, description } = req.body;
     
@@ -102,42 +93,45 @@ app.post('/api/users/consume-credit', (req, res) => {
     }
 
     try {
-        const newBalance = storageService.consumeUserCredit(userId, amount || 1, description || 'Descarga de documento');
+        const newBalance = await storageService.consumeUserCredit(userId, amount || 1, description || 'Descarga de documento');
         res.json({ success: true, credits: newBalance });
     } catch (e) {
         res.status(400).json({ error: e.message });
     }
 });
 
-app.get('/api/users/profile', (req, res) => {
+app.get('/api/users/profile', async (req, res) => {
     const userId = req.headers['x-user-id'];
     if (!userId) {
         return res.status(401).json({ error: 'No autorizado.' });
     }
     
-    const user = storageService.getUserById(userId);
-    if (!user) {
-        return res.status(404).json({ error: 'Usuario no encontrado.' });
+    try {
+        const user = await storageService.getUserById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
+        }
+        res.json(user);
+    } catch (e) {
+        res.status(500).json({ error: 'Error al recuperar perfil: ' + e.message });
     }
-    
-    res.json(user);
 });
 
 // --- Historial ---
-app.get('/api/history', (req, res) => {
+app.get('/api/history', async (req, res) => {
     const userId = req.headers['x-user-id'] || req.query.userId;
     if (!userId) {
         return res.status(401).json({ error: 'No autorizado. Se requiere x-user-id en cabeceras o query.' });
     }
     try {
-        const history = storageService.getHistory(userId);
+        const history = await storageService.getHistory(userId);
         res.json(history);
     } catch (e) {
-        res.status(500).json({ error: 'Error al obtener el historial.' });
+        res.status(500).json({ error: 'Error al obtener el historial: ' + e.message });
     }
 });
 
-app.post('/api/history', (req, res) => {
+app.post('/api/history', async (req, res) => {
     const userId = req.headers['x-user-id'];
     const { type, title, metadata, content } = req.body;
     
@@ -149,60 +143,76 @@ app.post('/api/history', (req, res) => {
     }
     
     try {
-        const newItem = storageService.saveHistoryItem(userId, { type, title, metadata, content });
+        const newItem = await storageService.saveHistoryItem(userId, { type, title, metadata, content });
         res.status(201).json(newItem);
     } catch (e) {
-        res.status(500).json({ error: 'Error al guardar en el historial.' });
+        res.status(500).json({ error: 'Error al guardar en el historial: ' + e.message });
     }
 });
 
-app.delete('/api/history/:id', (req, res) => {
+app.delete('/api/history/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        storageService.deleteHistoryItem(id);
+        await storageService.deleteHistoryItem(id);
         res.json({ success: true, message: 'Item eliminado del historial.' });
     } catch (e) {
-        res.status(500).json({ error: 'Error al eliminar del historial.' });
+        res.status(500).json({ error: 'Error al eliminar del historial: ' + e.message });
     }
 });
 
 // --- Documentos Base de Conocimiento ---
-app.get('/api/documents', (req, res) => {
+app.get('/api/documents', async (req, res) => {
+    const userId = req.headers['x-user-id'];
     try {
         const official = storageService.listOfficialDocuments();
-        const user = storageService.listUserDocuments();
+        const user = await storageService.listUserDocuments(userId);
         res.json({ official, user });
     } catch (e) {
-        res.status(500).json({ error: 'Error al listar los documentos.' });
+        res.status(500).json({ error: 'Error al listar los documentos: ' + e.message });
     }
 });
 
-app.post('/api/documents/upload', upload.single('file'), (req, res) => {
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    if (!userId) {
+        return res.status(401).json({ error: 'No autorizado. Se requiere x-user-id en las cabeceras.' });
+    }
+
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No se subió ningún archivo.' });
         }
+        
+        // Convertir buffer en string utf-8
+        const content = req.file.buffer.toString('utf8');
+        const file = await storageService.saveUserDocument(userId, req.file.originalname, content);
+        
         res.status(201).json({
             success: true,
-            message: 'Archivo cargado con éxito.',
-            file: { name: req.file.filename, type: 'user' }
+            message: 'Archivo cargado con éxito y guardado en base de datos.',
+            file
         });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Error al cargar el archivo.' });
     }
 });
 
-app.delete('/api/documents/:name', (req, res) => {
+app.delete('/api/documents/:name', async (req, res) => {
+    const userId = req.headers['x-user-id'];
+    if (!userId) {
+        return res.status(401).json({ error: 'No autorizado.' });
+    }
+    
     try {
         const { name } = req.params;
-        const success = storageService.deleteUserDocument(name);
+        const success = await storageService.deleteUserDocument(userId, name);
         if (success) {
             res.json({ success: true, message: 'Archivo eliminado con éxito.' });
         } else {
-            res.status(404).json({ error: 'Archivo no encontrado.' });
+            res.status(404).json({ error: 'Archivo no encontrado en tu cuenta.' });
         }
     } catch (e) {
-        res.status(500).json({ error: 'Error al eliminar el archivo.' });
+        res.status(500).json({ error: 'Error al eliminar el archivo: ' + e.message });
     }
 });
 
@@ -245,43 +255,43 @@ app.get('/api/rag/search', (req, res) => {
 
 // --- Rutas del Administrador ---
 
-app.get('/api/admin/stats', requireAdmin, (req, res) => {
+app.get('/api/admin/stats', requireAdmin, async (req, res) => {
     try {
-        const stats = storageService.getSystemStats();
+        const stats = await storageService.getSystemStats();
         res.json(stats);
     } catch (e) {
-        res.status(500).json({ error: 'Error al recuperar estadísticas globales.' });
+        res.status(500).json({ error: 'Error al recuperar estadísticas globales: ' + e.message });
     }
 });
 
-app.get('/api/admin/users', requireAdmin, (req, res) => {
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
-        const users = storageService.listAllUsers();
+        const users = await storageService.listAllUsers();
         res.json(users);
     } catch (e) {
-        res.status(500).json({ error: 'Error al listar usuarios.' });
+        res.status(500).json({ error: 'Error al listar usuarios: ' + e.message });
     }
 });
 
-app.post('/api/admin/add-credits', requireAdmin, (req, res) => {
+app.post('/api/admin/add-credits', requireAdmin, async (req, res) => {
     const { targetUserId, amount, description } = req.body;
     if (!targetUserId || amount === undefined) {
         return res.status(400).json({ error: 'Faltan parámetros obligatorios (targetUserId, amount).' });
     }
     try {
-        const newBalance = storageService.addUserCredits(targetUserId, parseInt(amount), description || 'Carga manual de créditos');
+        const newBalance = await storageService.addUserCredits(targetUserId, parseInt(amount), description || 'Carga manual de créditos');
         res.json({ success: true, userId: targetUserId, newCredits: newBalance });
     } catch (e) {
         res.status(400).json({ error: e.message });
     }
 });
 
-app.get('/api/admin/transactions', requireAdmin, (req, res) => {
+app.get('/api/admin/transactions', requireAdmin, async (req, res) => {
     try {
-        const list = storageService.listAllTransactions();
+        const list = await storageService.listAllTransactions();
         res.json(list);
     } catch (e) {
-        res.status(500).json({ error: 'Error al listar transacciones.' });
+        res.status(500).json({ error: 'Error al listar transacciones: ' + e.message });
     }
 });
 
@@ -294,6 +304,8 @@ app.post('/api/generate/pdc', async (req, res) => {
     }
 
     try {
+        // Enlazar ID de usuario para aislamiento de documentos RAG
+        params.userId = req.headers['x-user-id'];
         const result = await geminiService.generatePDC(params, apiKey);
         res.json({ content: result });
     } catch (e) {
@@ -309,6 +321,7 @@ app.post('/api/generate/evaluation', async (req, res) => {
     }
 
     try {
+        params.userId = req.headers['x-user-id'];
         const result = await geminiService.generateEvaluation(params, apiKey);
         res.json({ content: result });
     } catch (e) {
@@ -324,6 +337,7 @@ app.post('/api/generate/self-evaluation', async (req, res) => {
     }
 
     try {
+        params.userId = req.headers['x-user-id'];
         const result = await geminiService.generateSelfEvaluation(params, apiKey);
         res.json({ content: result });
     } catch (e) {
@@ -332,15 +346,19 @@ app.post('/api/generate/self-evaluation', async (req, res) => {
     }
 });
 
-// Servir frontend en producción
-if (process.env.NODE_ENV === 'production') {
+// Servir frontend en producción local (Vercel maneja esto nativamente, pero dejamos el soporte para cuando se corra localmente)
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     app.use(express.static(path.join(__dirname, '../frontend/dist')));
-    app.get('*', (req, res) => {
+    app.get('/*', (req, res) => {
         res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
     });
 }
 
-// Iniciar servidor
-app.listen(PORT, () => {
-    console.log(`Servidor de Apoyo Docente corriendo en http://localhost:${PORT}`);
-});
+// Iniciar servidor solo si es ejecutado directamente
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Servidor de Apoyo Docente corriendo en http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;

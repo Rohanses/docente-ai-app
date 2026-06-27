@@ -1,103 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const supabase = require('./supabaseClient');
 
-// Directorios de datos
+// Directorios de datos (solo para recursos oficiales estáticos y logs)
 const DATA_DIR = path.join(__dirname, '../data');
-const DB_DIR = path.join(__dirname, '../data/db');
 const OFFICIAL_DIR = path.join(__dirname, '../data/official_curriculum');
-const USER_DIR = path.join(__dirname, '../data/user_documents');
-const MODELO_ORIGIN_DIR = path.join(__dirname, '../../../documentos_modelo');
+const CATALOGO_PATH = path.join(__dirname, '../data/db/catalogo.json');
+const SEEDED_CONTENTS_PATH = path.join(__dirname, '../data/db/seeded_contents.json');
 
-// Rutas de archivos JSON
-const USERS_PATH = path.join(DB_DIR, 'users.json');
-const HISTORY_PATH = path.join(DB_DIR, 'history.json');
-const TRANSACTIONS_PATH = path.join(DB_DIR, 'transactions.json');
-const CATALOGO_PATH = path.join(DB_DIR, 'catalogo.json');
-const SEEDED_CONTENTS_PATH = path.join(DB_DIR, 'seeded_contents.json');
-
-// Utilidad criptográfica simple (SHA-256)
+// Utilidad criptográfica (SHA-256)
 function hashPassword(password) {
     return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// Inicializar base de datos
+// Inicializar base de datos (carpetas estáticas y RAG)
 function initialize() {
-    // Asegurar estructura de carpetas
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
     if (!fs.existsSync(OFFICIAL_DIR)) fs.mkdirSync(OFFICIAL_DIR, { recursive: true });
-    if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR, { recursive: true });
 
-    // Inicializar users.json
-    if (!fs.existsSync(USERS_PATH)) {
-        const defaultAdmin = {
-            id: 'admin_root',
-            email: 'admin@avelino.ia',
-            password: hashPassword('admin123'),
-            name: 'Administrador Avelino',
-            role: 'admin',
-            credits: 9999,
-            createdAt: new Date().toISOString()
-        };
-        fs.writeFileSync(USERS_PATH, JSON.stringify([defaultAdmin], null, 2), 'utf8');
-        console.log('users.json inicializado con administrador por defecto.');
-    }
-
-    // Inicializar history.json
-    if (!fs.existsSync(HISTORY_PATH)) {
-        // Si existía un db.json anterior de la versión monopersonal, podemos migrar sus datos a history.json
-        const oldDbPath = path.join(__dirname, '../db.json');
-        let initialHistory = [];
-        
-        if (fs.existsSync(oldDbPath)) {
-            try {
-                const oldData = JSON.parse(fs.readFileSync(oldDbPath, 'utf8'));
-                // Migrar asociando los antiguos items al administrador por defecto
-                initialHistory = (oldData.history || []).map(item => ({
-                    ...item,
-                    userId: 'admin_root'
-                }));
-                console.log(`Migrados ${initialHistory.length} elementos de planificación al nuevo history.json`);
-                fs.unlinkSync(oldDbPath); // Eliminar db.json antiguo
-            } catch (e) {
-                console.error('Error migrando db.json antiguo:', e);
-            }
-        }
-        
-        fs.writeFileSync(HISTORY_PATH, JSON.stringify(initialHistory, null, 2), 'utf8');
-        console.log('history.json inicializado.');
-    }
-
-    // Inicializar transactions.json
-    if (!fs.existsSync(TRANSACTIONS_PATH)) {
-        fs.writeFileSync(TRANSACTIONS_PATH, JSON.stringify([], null, 2), 'utf8');
-        console.log('transactions.json inicializado.');
-    }
-
-    // Copiar archivos markdown de documentos_modelo a official_curriculum si no existen
-    if (fs.existsSync(MODELO_ORIGIN_DIR)) {
-        try {
-            const files = fs.readdirSync(MODELO_ORIGIN_DIR);
-            let copyCount = 0;
-            files.forEach(file => {
-                if (file.endsWith('.md') && file !== 'convert_pdf_to_md.py') {
-                    const srcPath = path.join(MODELO_ORIGIN_DIR, file);
-                    const destPath = path.join(OFFICIAL_DIR, file);
-                    if (!fs.existsSync(destPath)) {
-                        fs.copyFileSync(srcPath, destPath);
-                        copyCount++;
-                    }
-                }
-            });
-            if (copyCount > 0) {
-                console.log(`Copiados ${copyCount} archivos curriculares base a la carpeta oficial.`);
-            }
-        } catch (error) {
-            console.error('Error al copiar archivos curriculares base:', error);
-        }
-    }
-    
     try {
         initializeRAG();
     } catch (e) {
@@ -105,26 +26,20 @@ function initialize() {
     }
 }
 
-// === AUTHENTICATION Y USUARIOS ===
+// === AUTENTICACIÓN Y USUARIOS ===
 
-function getUsers() {
-    try {
-        if (!fs.existsSync(USERS_PATH)) return [];
-        return JSON.parse(fs.readFileSync(USERS_PATH, 'utf8'));
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveUsers(usersList) {
-    fs.writeFileSync(USERS_PATH, JSON.stringify(usersList, null, 2), 'utf8');
-}
-
-function registerUser(email, password, name, nivel = 'General') {
-    const users = getUsers();
+async function registerUser(email, password, name, nivel = 'General') {
     const emailLower = email.toLowerCase().trim();
     
-    if (users.find(u => u.email.toLowerCase() === emailLower)) {
+    // Verificar si el usuario ya existe
+    const { data: existingUser, error: checkError } = await supabase
+        .from('avelino_users')
+        .select('id')
+        .eq('email', emailLower)
+        .maybeSingle();
+
+    if (checkError) throw checkError;
+    if (existingUser) {
         throw new Error('El correo electrónico ya se encuentra registrado.');
     }
 
@@ -135,146 +50,202 @@ function registerUser(email, password, name, nivel = 'General') {
         name: name.trim(),
         nivel: nivel,
         role: 'docente',
-        credits: 5, // Bono de bienvenida
-        createdAt: new Date().toISOString()
+        credits: 5,
+        created_at: new Date().toISOString()
     };
 
-    users.push(newUser);
-    saveUsers(users);
+    const { error: insertError } = await supabase
+        .from('avelino_users')
+        .insert([newUser]);
+
+    if (insertError) throw insertError;
 
     // Registrar transacción de bienvenida
-    logTransaction(newUser.id, 'add', 5, 'Bono de bienvenida por registro');
+    await logTransaction(newUser.id, 'add', 5, 'Bono de bienvenida por registro');
 
     const { password: _, ...userWithoutPassword } = newUser;
     return userWithoutPassword;
 }
 
-function authenticateUser(email, password) {
-    const users = getUsers();
+async function authenticateUser(email, password) {
     const emailLower = email.toLowerCase().trim();
     const hash = hashPassword(password);
 
-    const user = users.find(u => u.email.toLowerCase() === emailLower && u.password === hash);
+    const { data: user, error } = await supabase
+        .from('avelino_users')
+        .select('*')
+        .eq('email', emailLower)
+        .eq('password', hash)
+        .maybeSingle();
+
+    if (error) throw error;
     if (!user) {
         throw new Error('Credenciales incorrectas o usuario no encontrado.');
     }
 
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    const { password: _, created_at, ...userWithoutPassword } = user;
+    return {
+        ...userWithoutPassword,
+        createdAt: created_at
+    };
 }
 
-function getUserById(userId) {
-    const users = getUsers();
-    const user = users.find(u => u.id === userId);
-    if (!user) return null;
+async function getUserById(userId) {
+    if (!userId) return null;
+    const { data: user, error } = await supabase
+        .from('avelino_users')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (error || !user) return null;
     
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    const { password: _, created_at, ...userWithoutPassword } = user;
+    return {
+        ...userWithoutPassword,
+        createdAt: created_at
+    };
 }
 
 // === HISTORIAL CRUD FILTRADO POR USUARIO ===
 
-function getHistory(userId) {
+async function getHistory(userId) {
     try {
-        if (!fs.existsSync(HISTORY_PATH)) return [];
-        const history = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
+        const user = await getUserById(userId);
+        if (!user) return [];
+
+        let query = supabase.from('avelino_history').select('*');
         
-        // El administrador puede ver todo, el docente solo lo suyo
-        const users = getUsers();
-        const user = users.find(u => u.id === userId);
-        if (user && user.role === 'admin') {
-            return history;
+        // El administrador ve todo, el docente solo lo suyo
+        if (user.role !== 'admin') {
+            query = query.eq('user_id', userId);
         }
-        
-        return history.filter(item => item.userId === userId);
+
+        const { data: history, error } = await query.order('date', { ascending: false });
+        if (error) throw error;
+
+        return (history || []).map(item => ({
+            id: item.id,
+            userId: item.user_id,
+            date: item.date,
+            type: item.type,
+            title: item.title,
+            metadata: item.metadata,
+            content: item.content
+        }));
     } catch (e) {
-        console.error('Error leyendo history.json:', e);
+        console.error('Error leyendo historial desde Supabase:', e);
         return [];
     }
 }
 
-function saveHistoryItem(userId, item) {
+async function saveHistoryItem(userId, item) {
     try {
-        if (!fs.existsSync(HISTORY_PATH)) return null;
-        const history = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
-        
         const newItem = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-            userId: userId,
+            user_id: userId,
             date: new Date().toISOString(),
-            ...item
+            type: item.type,
+            title: item.title,
+            metadata: item.metadata || {},
+            content: item.content
         };
-        
-        history.unshift(newItem);
-        fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf8');
-        return newItem;
+
+        const { error } = await supabase
+            .from('avelino_history')
+            .insert([newItem]);
+
+        if (error) throw error;
+
+        return {
+            id: newItem.id,
+            userId: newItem.user_id,
+            date: newItem.date,
+            type: newItem.type,
+            title: newItem.title,
+            metadata: newItem.metadata,
+            content: newItem.content
+        };
     } catch (e) {
-        console.error('Error guardando en history.json:', e);
+        console.error('Error guardando historial en Supabase:', e);
         throw e;
     }
 }
 
-function deleteHistoryItem(id) {
+async function deleteHistoryItem(id) {
     try {
-        if (!fs.existsSync(HISTORY_PATH)) return false;
-        const history = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
-        const filtered = history.filter(item => item.id !== id);
-        fs.writeFileSync(HISTORY_PATH, JSON.stringify(filtered, null, 2), 'utf8');
+        const { error } = await supabase
+            .from('avelino_history')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
         return true;
     } catch (e) {
-        console.error('Error eliminando de history.json:', e);
+        console.error('Error eliminando historial en Supabase:', e);
         throw e;
     }
 }
 
 // === GESTIÓN DE CRÉDITOS Y TRANSACCIONES ===
 
-function getTransactions() {
+async function getTransactions() {
     try {
-        if (!fs.existsSync(TRANSACTIONS_PATH)) return [];
-        return JSON.parse(fs.readFileSync(TRANSACTIONS_PATH, 'utf8'));
+        const { data, error } = await supabase
+            .from('avelino_transactions')
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+        return (data || []).map(t => ({
+            id: t.id,
+            userId: t.user_id,
+            userEmail: t.user_email,
+            type: t.type,
+            amount: t.amount,
+            description: t.description,
+            date: t.date
+        }));
     } catch (e) {
+        console.error('Error al obtener transacciones:', e);
         return [];
     }
 }
 
-function logTransaction(userId, type, amount, description) {
+async function logTransaction(userId, type, amount, description) {
     try {
-        const transactions = getTransactions();
-        const users = getUsers();
-        const user = users.find(u => u.id === userId);
+        const user = await getUserById(userId);
         
         const newTransaction = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-            userId: userId,
-            userEmail: user ? user.email : 'desconocido',
-            type: type, // 'add' o 'consume'
+            user_id: userId,
+            user_email: user ? user.email : 'desconocido',
+            type: type,
             amount: amount,
             description: description,
             date: new Date().toISOString()
         };
-        
-        transactions.unshift(newTransaction);
-        fs.writeFileSync(TRANSACTIONS_PATH, JSON.stringify(transactions, null, 2), 'utf8');
+
+        const { error } = await supabase
+            .from('avelino_transactions')
+            .insert([newTransaction]);
+
+        if (error) throw error;
         return newTransaction;
     } catch (e) {
-        console.error('Error guardando transacción:', e);
+        console.error('Error guardando transacción en Supabase:', e);
     }
 }
 
-function consumeUserCredit(userId, amount = 1, description = 'Descarga de documento') {
-    const users = getUsers();
-    const userIndex = users.findIndex(u => u.id === userId);
-    
-    if (userIndex === -1) {
+async function consumeUserCredit(userId, amount = 1, description = 'Descarga de documento') {
+    const user = await getUserById(userId);
+    if (!user) {
         throw new Error('Usuario no encontrado.');
     }
     
-    const user = users[userIndex];
-    
     // Si es administrador, no tiene límite de créditos
     if (user.role === 'admin') {
-        logTransaction(userId, 'consume', amount, `${description} (Exento por Admin)`);
+        await logTransaction(userId, 'consume', amount, `${description} (Exento por Admin)`);
         return user.credits;
     }
     
@@ -282,56 +253,112 @@ function consumeUserCredit(userId, amount = 1, description = 'Descarga de docume
         throw new Error('Créditos insuficientes. Por favor, solicita más créditos a tu administrador.');
     }
 
-    user.credits -= amount;
-    users[userIndex] = user;
-    saveUsers(users);
+    const newCredits = user.credits - amount;
 
-    logTransaction(userId, 'consume', amount, description);
-    return user.credits;
+    const { error } = await supabase
+        .from('avelino_users')
+        .update({ credits: newCredits })
+        .eq('id', userId);
+
+    if (error) throw error;
+
+    await logTransaction(userId, 'consume', amount, description);
+    return newCredits;
 }
 
-function addUserCredits(userId, amount, description = 'Carga de créditos por administrador') {
-    const users = getUsers();
-    const userIndex = users.findIndex(u => u.id === userId);
-    
-    if (userIndex === -1) {
+async function addUserCredits(userId, amount, description = 'Carga de créditos por administrador') {
+    const user = await getUserById(userId);
+    if (!user) {
         throw new Error('Usuario no encontrado.');
     }
     
-    users[userIndex].credits += amount;
-    saveUsers(users);
+    const newCredits = user.credits + amount;
 
-    logTransaction(userId, 'add', amount, description);
-    return users[userIndex].credits;
+    const { error } = await supabase
+        .from('avelino_users')
+        .update({ credits: newCredits })
+        .eq('id', userId);
+
+    if (error) throw error;
+
+    await logTransaction(userId, 'add', amount, description);
+    return newCredits;
 }
 
 // === HELPERS DE ADMINISTRADOR ===
 
-function listAllUsers() {
-    return getUsers().map(u => {
-        const { password, ...userWithoutPassword } = u;
-        return userWithoutPassword;
-    });
+async function listAllUsers() {
+    const { data, error } = await supabase
+        .from('avelino_users')
+        .select('id, email, name, nivel, role, credits, created_at')
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map(u => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        nivel: u.nivel,
+        role: u.role,
+        credits: u.credits,
+        createdAt: u.created_at
+    }));
 }
 
-function listAllTransactions() {
-    return getTransactions();
+async function listAllTransactions() {
+    return await getTransactions();
 }
 
-function getSystemStats() {
-    const users = getUsers();
-    const history = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8') || '[]');
-    const transactions = getTransactions();
+async function getSystemStats() {
+    try {
+        // Obtener cantidad de docentes
+        const { count: totalTeachers, error: errTeachers } = await supabase
+            .from('avelino_users')
+            .select('*', { count: 'exact', head: true })
+            .eq('role', 'docente');
 
-    const teachers = users.filter(u => u.role === 'docente');
-    const totalDownloads = transactions.filter(t => t.type === 'consume').reduce((acc, curr) => acc + curr.amount, 0);
+        if (errTeachers) throw errTeachers;
 
-    return {
-        totalTeachers: teachers.length,
-        totalGenerations: history.length,
-        totalDownloads: totalDownloads,
-        activeCredits: teachers.reduce((acc, curr) => acc + curr.credits, 0)
-    };
+        // Obtener cantidad de generaciones
+        const { count: totalGenerations, error: errHistory } = await supabase
+            .from('avelino_history')
+            .select('*', { count: 'exact', head: true });
+
+        if (errHistory) throw errHistory;
+
+        // Obtener suma de descargas
+        const { data: consumeTx, error: errTx } = await supabase
+            .from('avelino_transactions')
+            .select('amount')
+            .eq('type', 'consume');
+
+        if (errTx) throw errTx;
+        const totalDownloads = (consumeTx || []).reduce((acc, curr) => acc + curr.amount, 0);
+
+        // Obtener créditos activos
+        const { data: usersCredits, error: errCredits } = await supabase
+            .from('avelino_users')
+            .select('credits')
+            .eq('role', 'docente');
+
+        if (errCredits) throw errCredits;
+        const activeCredits = (usersCredits || []).reduce((acc, curr) => acc + curr.credits, 0);
+
+        return {
+            totalTeachers: totalTeachers || 0,
+            totalGenerations: totalGenerations || 0,
+            totalDownloads: totalDownloads,
+            activeCredits: activeCredits
+        };
+    } catch (e) {
+        console.error('Error al compilar estadísticas desde Supabase:', e);
+        return {
+            totalTeachers: 0,
+            totalGenerations: 0,
+            totalDownloads: 0,
+            activeCredits: 0
+        };
+    }
 }
 
 // === DOCUMENTOS (KNOWLEDGE BASE) ===
@@ -347,40 +374,75 @@ function listOfficialDocuments() {
     }
 }
 
-function listUserDocuments() {
+async function listUserDocuments(userId) {
     try {
-        if (!fs.existsSync(USER_DIR)) return [];
-        return fs.readdirSync(USER_DIR)
-            .filter(f => f.endsWith('.md') || f.endsWith('.txt'))
-            .map(f => ({ name: f, type: 'user' }));
+        if (!userId) return [];
+        const { data, error } = await supabase
+            .from('avelino_user_documents')
+            .select('name')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return (data || []).map(f => ({ name: f.name, type: 'user' }));
     } catch (e) {
+        console.error('Error al listar documentos en Supabase:', e);
         return [];
     }
 }
 
-function deleteUserDocument(name) {
+async function deleteUserDocument(userId, name) {
     try {
-        const safeName = path.basename(name);
-        const filePath = path.join(USER_DIR, safeName);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            return true;
-        }
-        return false;
+        if (!userId) return false;
+        const { error } = await supabase
+            .from('avelino_user_documents')
+            .delete()
+            .eq('user_id', userId)
+            .eq('name', name);
+
+        if (error) throw error;
+        return true;
     } catch (e) {
-        console.error('Error al eliminar archivo de usuario:', e);
+        console.error('Error al eliminar archivo de Supabase:', e);
         throw e;
     }
 }
 
-function saveUserDocument(name, content) {
+async function saveUserDocument(userId, name, content) {
     try {
+        if (!userId) throw new Error('Se requiere x-user-id para guardar documentos.');
         const safeName = path.basename(name).replace(/\.[^/.]+$/, "") + ".md";
-        const filePath = path.join(USER_DIR, safeName);
-        fs.writeFileSync(filePath, content, 'utf8');
+        const documentId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+
+        // Si ya existe un documento con ese nombre para este usuario, lo actualizamos
+        const { data: existingDoc } = await supabase
+            .from('avelino_user_documents')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('name', safeName)
+            .maybeSingle();
+
+        if (existingDoc) {
+            const { error } = await supabase
+                .from('avelino_user_documents')
+                .update({ content })
+                .eq('id', existingDoc.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase
+                .from('avelino_user_documents')
+                .insert([{
+                    id: documentId,
+                    user_id: userId,
+                    name: safeName,
+                    content: content
+                }]);
+            if (error) throw error;
+        }
+
         return { name: safeName, type: 'user' };
     } catch (e) {
-        console.error('Error guardando archivo de usuario:', e);
+        console.error('Error guardando archivo de usuario en Supabase:', e);
         throw e;
     }
 }
@@ -400,13 +462,11 @@ function getSeededContent(nivel, grado, area, trimestre) {
         if (!fs.existsSync(SEEDED_CONTENTS_PATH)) return [];
         const contents = JSON.parse(fs.readFileSync(SEEDED_CONTENTS_PATH, 'utf8'));
         
-        // Normalizar los parámetros para la búsqueda
         const targetNivel = (nivel || '').toLowerCase().trim();
         const targetGrado = parseInt(grado, 10);
         const targetArea = (area || '').toLowerCase().trim();
         const targetTrimestre = parseInt(trimestre, 10);
         
-        // Filtrar
         return contents.filter(item => {
             const itemNivel = (item.nivel || '').toLowerCase().trim();
             const itemArea = (item.area || '').toLowerCase().trim();
@@ -435,8 +495,8 @@ function tokenize(text) {
     ]);
     return text.toLowerCase()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "") // quitar acentos
-        .replace(/[^a-z0-9ñ]/g, " ")     // mantener solo letras y números
+        .replace(/[\u0300-\u036f]/g, "") 
+        .replace(/[^a-z0-9ñ]/g, " ")     
         .split(/\s+/)
         .filter(word => word.length > 2 && !stopwords.has(word));
 }
@@ -450,7 +510,7 @@ function initializeRAG() {
     ];
 
     const chunks = [];
-    const chunkSize = 1200; // caracteres
+    const chunkSize = 1200; 
     const chunkOverlap = 300;
 
     filesToIndex.forEach(filename => {
@@ -479,7 +539,6 @@ function initializeRAG() {
         return;
     }
 
-    // Calcular IDF
     const totalDocs = chunks.length;
     const docFreqs = {};
 
@@ -495,7 +554,6 @@ function initializeRAG() {
         idf[token] = Math.log(totalDocs / docFreqs[token]);
     }
 
-    // Calcular vectores TF-IDF para cada chunk
     chunks.forEach(chunk => {
         const termFreqs = {};
         chunk.tokens.forEach(token => {
@@ -532,7 +590,6 @@ function searchGuidelines(query, topK = 4) {
         return { chunk, score };
     });
 
-    // Ordenar y tomar los topK
     const results = scores
         .filter(s => s.score > 0)
         .sort((a, b) => b.score - a.score)
@@ -546,7 +603,7 @@ function searchGuidelines(query, topK = 4) {
     return results;
 }
 
-function getContextForAI(nivel, grado, materia, trimestre) {
+async function getContextForAI(nivel, grado, materia, trimestre, userId) {
     let context = "";
     
     // 1. Plantilla Oficial
@@ -578,7 +635,6 @@ function getContextForAI(nivel, grado, materia, trimestre) {
         });
         context += `\n`;
     } else {
-        // Fallback al parseador básico anterior si no se encuentra presembrado
         let planesName = "";
         if (nivelLower.includes('inicial') || nivelLower === 'eifc') {
             planesName = "planes-programas-inicial-2023.md";
@@ -607,16 +663,22 @@ function getContextForAI(nivel, grado, materia, trimestre) {
         });
     }
 
-    // 4. Archivos del usuario (PSP)
-    if (fs.existsSync(USER_DIR)) {
+    // 4. Archivos del usuario desde Supabase (específico de su cuenta)
+    if (userId) {
         try {
-            const userFiles = fs.readdirSync(USER_DIR);
-            userFiles.forEach(uf => {
-                const filePath = path.join(USER_DIR, uf);
-                const content = fs.readFileSync(filePath, 'utf8');
-                context += `### DOCUMENTO PERSONALIZADO DE LA UNIDAD EDUCATIVA (${uf}):\n${content}\n\n`;
-            });
-        } catch (e) {}
+            const { data: userDocs, error } = await supabase
+                .from('avelino_user_documents')
+                .select('name, content')
+                .eq('user_id', userId);
+            
+            if (!error && userDocs && userDocs.length > 0) {
+                userDocs.forEach(doc => {
+                    context += `### DOCUMENTO PERSONALIZADO DE LA UNIDAD EDUCATIVA (${doc.name}):\n${doc.content}\n\n`;
+                });
+            }
+        } catch (e) {
+            console.error('Error al cargar documentos del RAG desde Supabase:', e);
+        }
     }
 
     return context;
