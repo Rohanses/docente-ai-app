@@ -347,9 +347,9 @@ app.post('/api/generate/self-evaluation', async (req, res) => {
 });
 
 // Servir frontend en producción local (Vercel maneja esto nativamente, pero dejamos el soporte para cuando se corra localmente)
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     app.use(express.static(path.join(__dirname, '../frontend/dist')));
-    app.get('*', (req, res) => {
+    app.get('/*', (req, res) => {
         res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
     });
 }
